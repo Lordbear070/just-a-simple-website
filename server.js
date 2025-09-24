@@ -13,7 +13,7 @@ const app = express();
 const PORT = 3000;
 
 // Config - change these if you want
-const DATA_FOLDER = "C:\\Program Files\\Simple website data";
+const DATA_FOLDER = path.join(process.env.USERPROFILE, "SimpleWebsiteData");
 const RAMBLE_FILE = path.join(DATA_FOLDER, "ramble.txt");
 const MASTER_FILE = path.join(DATA_FOLDER, "master.hash"); // stores sha384 hash of master password (hex)
 const VAULT_FILE = path.join(DATA_FOLDER, "passwords.enc"); // encrypted blob
