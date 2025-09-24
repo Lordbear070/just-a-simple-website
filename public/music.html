@@ -1,54 +1,100 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Music</title>
+  <meta charset="UTF-8" />
+  <title>Music Player</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    button { margin: 3px 0; }
+    #musicList { list-style: none; padding-left: 0; }
+    #searchBox { width: 300px; margin-bottom: 10px; }
+    audio { margin-top: 20px; width: 400px; display: block; }
+  </style>
 </head>
 <body>
-  <button onclick="location.href='home.html'">⬅ Back to Home</button>
-  <h1>Music</h1>
-  <input type="text" id="search" placeholder="Search music..." oninput="filterMusic()"><br><br>
-  <div id="musicList"></div>
-  <audio id="player" controls style="margin-top:20px; width:400px;"></audio>
+  <h1>Music Player</h1>
+  <button onclick="window.location.href='home.html'">⬅ Back to Home</button>
+
+  <br><br>
+  <input type="text" id="searchBox" placeholder="Search music..." oninput="searchMusic()" />
+
+  <audio id="player" controls></audio>
+
+  <ul id="musicList"></ul>
 
   <script>
     const sessionToken = localStorage.getItem("sessionToken");
-    if (!sessionToken) location.href = "index.html";
+    if (!sessionToken) window.location.href = "index.html";
 
     let allMusic = [];
 
     async function loadMusic() {
-    const res = await fetch("/api/music", {
-        headers: {
-        "Authorization": "Bearer " + sessionToken
+      try {
+        const res = await fetch("/api/music", {
+          headers: { "Authorization": "Bearer " + sessionToken }
+        });
+
+        if (!res.ok) {
+          document.getElementById("musicList").innerHTML = "<li>Error loading music</li>";
+          return;
         }
-    });
-    allMusic = await res.json();
-    renderMusic(allMusic);
+
+        allMusic = await res.json(); // Now the array directly
+        renderMusic(allMusic);
+
+      } catch (err) {
+        console.error(err);
+        document.getElementById("musicList").innerHTML = "<li>Error loading music</li>";
+      }
     }
 
-    function renderMusic(list) {
-      const container = document.getElementById("musicList");
-      container.innerHTML = "";
-      list.forEach(file => {
+    function renderMusic(musicArray) {
+      const list = document.getElementById("musicList");
+      list.innerHTML = "";
+      musicArray.forEach(file => {
+        const li = document.createElement("li");
         const btn = document.createElement("button");
         btn.textContent = file;
         btn.onclick = () => playMusic(file);
-        container.appendChild(btn);
-        container.appendChild(document.createElement("br"));
+        li.appendChild(btn);
+        list.appendChild(li);
       });
     }
 
-    function filterMusic() {
-      const q = document.getElementById("search").value.toLowerCase();
-      renderMusic(allMusic.filter(f => f.toLowerCase().includes(q)));
+    function searchMusic() {
+      const term = document.getElementById("searchBox").value.toLowerCase();
+      if (term === "") {
+        renderMusic(allMusic);
+      } else {
+        const filtered = allMusic.filter(f => f.toLowerCase().includes(term));
+        renderMusic(filtered);
+      }
     }
 
-    function playMusic(file) {
-      const player = document.getElementById("player");
-      player.src = "/api/musicfile?sessionToken=" + sessionToken + "&file=" + encodeURIComponent(file);
-      player.play();
+    async function playMusic(file) {
+      try {
+        const res = await fetch("/api/musicfile?file=" + encodeURIComponent(file), {
+          headers: { "Authorization": "Bearer " + sessionToken }
+        });
+
+        if (!res.ok) {
+          alert("Error loading file: " + (await res.text()));
+          return;
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const player = document.getElementById("player");
+        player.src = url;
+        player.play();
+
+      } catch (err) {
+        console.error(err);
+        alert("Error playing file");
+      }
     }
 
+    // Load all music on page load
     loadMusic();
   </script>
 </body>

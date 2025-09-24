@@ -124,14 +124,27 @@ function listFilesRecursive(dir) {
 }
 
 app.get("/api/music", requireAuth, (req, res) => {
-  const files = listFilesRecursive(MUSIC_FOLDER);
-  res.json({ ok: true, files });
+  const files = listFilesRecursive(MUSIC_FOLDER).filter(f => f.endsWith(".mp3") || f.endsWith(".wav"));
+  res.json(files);
 });
 
-app.get("/musicfile", requireAuth, (req, res) => {
-  const f = req.query.path;
-  if (!f || !f.startsWith(MUSIC_FOLDER)) return res.status(400).end();
-  res.sendFile(f);
+app.get("/api/musicfile", requireAuth, (req, res) => {
+  const file = req.query.file;
+  if (!file) return res.status(400).send("Missing file");
+
+  // Resolve full path safely
+  const fullPath = path.resolve(MUSIC_FOLDER, file);
+
+  // Prevent path traversal
+  if (!fullPath.startsWith(path.resolve(MUSIC_FOLDER))) {
+    return res.status(403).send("Forbidden");
+  }
+
+  // Check if file exists
+  fs.access(fullPath, fs.constants.R_OK, (err) => {
+    if (err) return res.status(404).send("File not found");
+    res.sendFile(fullPath);
+  });
 });
 
 // === TODO: password manager endpoints will go here (similar pattern) ===
