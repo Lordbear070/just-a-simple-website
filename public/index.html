@@ -1,59 +1,55 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>Simple Website - Login</title>
+  <meta charset="UTF-8">
+  <title>Simple Website Login</title>
   <style>
-    body { font-family: Arial; max-width:700px; margin:40px auto; }
-    .card { border:1px solid #ddd; padding:20px; border-radius:8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-    input { padding:8px; width:100%; margin:6px 0; box-sizing:border-box; }
-    button { padding:10px 14px; }
-    .error { color: red; }
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input { display: block; margin: 8px 0; }
+    #status { color: red; }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>Simple Website — Login / Register</h2>
-    <div id="status"></div>
-    <div id="registerBox">
-      <h3>Register a master password (first time)</h3>
-      <input id="regMaster" type="password" placeholder="Enter master password (min 6)"/>
-      <button id="btnRegister">Register</button>
-    </div>
-    <hr/>
-    <h3>Login</h3>
-    <input id="loginMaster" type="password" placeholder="Master password"/>
-    <button id="btnLogin">Login</button>
-    <p id="err" class="error"></p>
-  </div>
+  <h2>Login</h2>
+  <input id="loginUser" placeholder="Username">
+  <input id="loginPass" placeholder="Password" type="password">
+  <button onclick="login()">Login</button>
+
+  <h2>Register</h2>
+  <input id="regUser" placeholder="Username">
+  <input id="regPass" placeholder="Password" type="password">
+  <button onclick="register()">Register</button>
+
+  <p id="status"></p>
 
   <script>
-    async function postJSON(url, body){
-      const resp = await fetch(url, {
+    async function register() {
+      const username = document.getElementById("regUser").value;
+      const password = document.getElementById("regPass").value;
+      const r = await fetch("/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      return resp.json().catch(()=>({ok:false}));
+        body: JSON.stringify({ username, password })
+      }).then(r => r.json());
+      document.getElementById("status").innerText = r.ok ? "Registered! You can login now." : r.error;
     }
 
-    document.getElementById('btnRegister').onclick = async () => {
-      const master = document.getElementById('regMaster').value;
-      const r = await postJSON('/api/register', { master });
-      if (r.ok) { location.href = '/home.html'; } else { document.getElementById('status').innerText = r.error || "Error"; }
-    };
-
-    document.getElementById('btnLogin').onclick = async () => {
-      const master = document.getElementById('loginMaster').value;
-      const r = await postJSON('/api/login', { master });
+    async function login() {
+      const username = document.getElementById("loginUser").value;
+      const password = document.getElementById("loginPass").value;
+      const r = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      }).then(r => r.json());
       if (r.ok) {
-        // store master in sessionStorage for client-side encryption ops (not persisted)
-        sessionStorage.setItem('master', master);
-        location.href = '/home.html';
+        localStorage.setItem("session", r.token);
+        localStorage.setItem("username", username);
+        window.location.href = "/home.html";
       } else {
-        document.getElementById('err').innerText = r.error || "Login failed";
+        document.getElementById("status").innerText = r.error || "Error";
       }
-    };
+    }
   </script>
 </body>
 </html>

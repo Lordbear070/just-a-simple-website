@@ -1,250 +1,143 @@
 // server.js
-const express = require('express');
-const bodyParser = require('body-parser');
-const session = require('express-session');
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const util = require('util');
-const readdir = util.promisify(fs.readdir);
-const stat = util.promisify(fs.stat);
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const bodyParser = require("body-parser");
 
 const app = express();
-const PORT = 3000;
+app.use(bodyParser.json());
+app.use(express.static("public")); // serve html/css/js from "public" folder
 
-// Config - change these if you want
+// === CONFIG ===
 const DATA_FOLDER = path.join(process.env.USERPROFILE, "SimpleWebsiteData");
-const RAMBLE_FILE = path.join(DATA_FOLDER, "ramble.txt");
-const MASTER_FILE = path.join(DATA_FOLDER, "master.hash"); // stores sha384 hash of master password (hex)
-const VAULT_FILE = path.join(DATA_FOLDER, "passwords.enc"); // encrypted blob
-const VAULT_META = path.join(DATA_FOLDER, "passwords.meta.json"); // stores salt etc
+const USERS_FOLDER = path.join(DATA_FOLDER, "users");
+if (!fs.existsSync(USERS_FOLDER)) fs.mkdirSync(USERS_FOLDER, { recursive: true });
 
-const MUSIC_ROOT = "D:\\music"; // source music folder
+// sessions stored in memory: token -> username
+const sessions = {};
 
-// Ensure data folder exists
-if (!fs.existsSync(DATA_FOLDER)){
-  try {
-    fs.mkdirSync(DATA_FOLDER, { recursive: true });
-    console.log("Created data folder:", DATA_FOLDER);
-  } catch (err) {
-    console.error("Could not create data folder. Run as admin or choose another folder.", err);
-    process.exit(1);
+// === HELPERS ===
+function hashPassword(pw) {
+  return crypto.createHash("sha384").update(pw).digest("hex");
+}
+
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
   }
-}
-
-app.use(bodyParser.json({ limit: '10mb' }));
-app.use(bodyParser.urlencoded({ extended: true }));
-
-app.use(session({
-  secret: crypto.randomBytes(32).toString('hex'),
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false } // local only; if you enable https set true
-}));
-
-// serve frontend static files from "public"
-app.use(express.static(path.join(__dirname, 'public')));
-
-/* --------- Utility: Crypto --------- */
-function sha384Hex(input) {
-  return crypto.createHash('sha384').update(input, 'utf8').digest('hex');
-}
-
-function deriveKey(masterPassword, salt, iterations = 200000) {
-  // returns Buffer (32 bytes)
-  return crypto.pbkdf2Sync(masterPassword, salt, iterations, 32, 'sha512');
-}
-
-function encryptVault(plaintextJson, masterPassword) {
-  const salt = crypto.randomBytes(16);
-  const key = deriveKey(masterPassword, salt);
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const ciphertext = Buffer.concat([cipher.update(Buffer.from(plaintextJson, 'utf8')), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return {
-    salt: salt.toString('base64'),
-    iv: iv.toString('base64'),
-    tag: tag.toString('base64'),
-    ciphertext: ciphertext.toString('base64')
-  };
-}
-
-function decryptVault(encObj, masterPassword) {
-  const salt = Buffer.from(encObj.salt, 'base64');
-  const iv = Buffer.from(encObj.iv, 'base64');
-  const tag = Buffer.from(encObj.tag, 'base64');
-  const ct = Buffer.from(encObj.ciphertext, 'base64');
-  const key = deriveKey(masterPassword, salt);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
-  return pt.toString('utf8');
-}
-
-/* --------- Auth endpoints --------- */
-
-// Register master password (first time)
-app.post('/api/register', (req, res) => {
-  const { master } = req.body;
-  if (!master || master.length < 6) {
-    return res.status(400).json({ ok: false, error: "Master password must be at least 6 characters." });
+  const token = auth.slice(7);
+  const username = sessions[token];
+  if (!username) {
+    return res.status(401).json({ ok: false, error: "Invalid session" });
   }
-  if (fs.existsSync(MASTER_FILE)) {
-    return res.status(400).json({ ok: false, error: "Master password already set. Use login." });
-  }
-  const hash = sha384Hex(master);
-  fs.writeFileSync(MASTER_FILE, hash, { encoding: 'utf8' });
-  req.session.authed = true;
+  req.username = username;
+  req.userFolder = path.join(USERS_FOLDER, username);
+  next();
+}
+
+// === AUTH ROUTES ===
+app.post("/api/register", (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.json({ ok: false, error: "Missing username or password" });
+  if (password.length < 6) return res.json({ ok: false, error: "Password must be at least 6 characters." });
+
+  const userFolder = path.join(USERS_FOLDER, username);
+  if (fs.existsSync(userFolder)) return res.json({ ok: false, error: "User already exists" });
+
+  fs.mkdirSync(userFolder, { recursive: true });
+  fs.writeFileSync(path.join(userFolder, "master.hash"), hashPassword(password));
   res.json({ ok: true });
 });
 
-// Login
-app.post('/api/login', (req, res) => {
-  const { master } = req.body;
-  if (!master) return res.status(400).json({ ok: false, error: "Missing master password." });
-  if (!fs.existsSync(MASTER_FILE)) return res.status(400).json({ ok: false, error: "No master password set. Register first." });
-  const saved = fs.readFileSync(MASTER_FILE, 'utf8').trim();
-  const hash = sha384Hex(master);
-  if (hash === saved) {
-    req.session.authed = true;
-    // Note: we do not store the password on the server. Client will keep it for encryption/decryption operations.
-    res.json({ ok: true });
-  } else {
-    res.status(401).json({ ok: false, error: "Invalid password." });
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+  const userFolder = path.join(USERS_FOLDER, username);
+  if (!fs.existsSync(userFolder)) return res.json({ ok: false, error: "User not found" });
+
+  const savedHash = fs.readFileSync(path.join(userFolder, "master.hash"), "utf8");
+  if (hashPassword(password) !== savedHash) {
+    return res.json({ ok: false, error: "Invalid password" });
   }
+
+  const token = crypto.randomBytes(24).toString("hex");
+  sessions[token] = username;
+  res.json({ ok: true, token });
 });
 
-// Logout
-app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
+// === RAMBLE ===
+app.get("/api/ramble", requireAuth, (req, res) => {
+  const rambleFile = path.join(req.userFolder, "ramble.txt");
+  let text = "";
+  if (fs.existsSync(rambleFile)) text = fs.readFileSync(rambleFile, "utf8");
+  res.json({ ok: true, text });
 });
 
-/* --------- Middleware to require login for APIs --------- */
-function requireAuth(req, res, next) {
-  if (req.session && req.session.authed) return next();
-  res.status(401).json({ ok: false, error: "Not authenticated" });
-}
-
-/* --------- Rambleling: simple text editor save/load --------- */
-app.get('/api/ramble/load', requireAuth, (req, res) => {
-  const content = fs.existsSync(RAMBLE_FILE) ? fs.readFileSync(RAMBLE_FILE, 'utf8') : '';
-  res.json({ ok: true, content });
+app.post("/api/ramble", requireAuth, (req, res) => {
+  const { text } = req.body;
+  const rambleFile = path.join(req.userFolder, "ramble.txt");
+  fs.writeFileSync(rambleFile, text || "");
+  res.json({ ok: true });
 });
 
-app.post('/api/ramble/save', requireAuth, (req, res) => {
-  const { content } = req.body;
-  try {
-    fs.writeFileSync(RAMBLE_FILE, content || '', 'utf8');
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.toString() });
+// === PASSWORD MANAGER ===
+// store encrypted JSON string per user
+app.get("/api/passwords", requireAuth, (req, res) => {
+  const vaultFile = path.join(req.userFolder, "passwords.json");
+  let entries = [];
+  if (fs.existsSync(vaultFile)) {
+    entries = JSON.parse(fs.readFileSync(vaultFile, "utf8"));
   }
+  res.json({ ok: true, entries });
 });
 
-/* --------- Music: list and stream --------- */
+app.post("/api/passwords", requireAuth, (req, res) => {
+  const vaultFile = path.join(req.userFolder, "passwords.json");
+  const { entry } = req.body;
+  if (!entry || !entry.website) {
+    return res.json({ ok: false, error: "Missing entry or website" });
+  }
 
-// Helper: recursively list files under MUSIC_ROOT
-async function listMusic(dir) {
+  let entries = [];
+  if (fs.existsSync(vaultFile)) {
+    entries = JSON.parse(fs.readFileSync(vaultFile, "utf8"));
+  }
+  entries.push(entry);
+  fs.writeFileSync(vaultFile, JSON.stringify(entries, null, 2));
+  res.json({ ok: true });
+});
+
+const MUSIC_FOLDER = "D:\\music";
+
+function listFilesRecursive(dir) {
   let results = [];
-  let items = await readdir(dir);
-  for (const f of items) {
-    const full = path.join(dir, f);
-    let s = await stat(full);
-    if (s.isDirectory()) {
-      const sub = await listMusic(full);
-      results = results.concat(sub);
-    } else {
-      // accept .mp3 and .wav
-      if (/\.(mp3|wav)$/i.test(f)) {
-        results.push({ path: full, name: path.relative(MUSIC_ROOT, full).replace(/\\/g, "/"), size: s.size });
-      }
+  fs.readdirSync(dir, { withFileTypes: true }).forEach(file => {
+    const fullPath = path.join(dir, file.name);
+    if (file.isDirectory()) {
+      results = results.concat(listFilesRecursive(fullPath));
+    } else if (/\.(mp3|wav)$/i.test(file.name)) {
+      results.push(fullPath);
     }
-  }
+  });
   return results;
 }
 
-// Endpoint: list music
-app.get('/api/music/list', requireAuth, async (req, res) => {
-  try {
-    if (!fs.existsSync(MUSIC_ROOT)) return res.json({ ok: true, files: [] });
-    const files = await listMusic(MUSIC_ROOT);
-    res.json({ ok: true, files });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.toString() });
-  }
+app.get("/api/music", requireAuth, (req, res) => {
+  const files = listFilesRecursive(MUSIC_FOLDER);
+  res.json({ ok: true, files });
 });
 
-// Stream file (by relative path)
-app.get('/api/music/stream', requireAuth, (req, res) => {
-  const rel = req.query.path;
-  if (!rel) return res.status(400).json({ ok: false, error: "path query required" });
-
-  // Build absolute path safely
-  const full = path.join(MUSIC_ROOT, rel);
-  if (!full.startsWith(MUSIC_ROOT)) return res.status(400).json({ ok: false, error: "Invalid path" });
-  if (!fs.existsSync(full)) return res.status(404).json({ ok: false, error: "File not found" });
-
-  const statObj = fs.statSync(full);
-  const range = req.headers.range;
-  if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : statObj.size - 1;
-    if (start >= statObj.size) {
-      res.status(416).send('Requested range not satisfiable\n' + start + ' >= ' + statObj.size);
-      return;
-    }
-    res.writeHead(206, {
-      'Content-Range': `bytes ${start}-${end}/${statObj.size}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': (end - start) + 1,
-      'Content-Type': 'audio/mpeg'
-    });
-    fs.createReadStream(full, { start, end }).pipe(res);
-  } else {
-    res.writeHead(200, {
-      'Content-Length': statObj.size,
-      'Content-Type': 'audio/mpeg'
-    });
-    fs.createReadStream(full).pipe(res);
-  }
+app.get("/musicfile", requireAuth, (req, res) => {
+  const f = req.query.path;
+  if (!f || !f.startsWith(MUSIC_FOLDER)) return res.status(400).end();
+  res.sendFile(f);
 });
 
-/* --------- Passwords manager: encrypt/decrypt vault --------- */
+// === TODO: password manager endpoints will go here (similar pattern) ===
 
-// Save vault: client sends master password + vault JSON (array of entries); server encrypts and stores
-app.post('/api/passwords/save', requireAuth, (req, res) => {
-  const { master, vault } = req.body; // vault is JSON string or object
-  if (!master || !vault) return res.status(400).json({ ok: false, error: "Missing master or vault." });
-  const vaultJson = typeof vault === 'string' ? vault : JSON.stringify(vault);
-  try {
-    const enc = encryptVault(vaultJson, master);
-    fs.writeFileSync(VAULT_FILE, JSON.stringify(enc), 'utf8');
-    // write meta so client can know file exists
-    fs.writeFileSync(VAULT_META, JSON.stringify({ created: new Date().toISOString() }), 'utf8');
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.toString() });
-  }
-});
-
-// Load vault: client provides master password, server returns decrypted JSON
-app.post('/api/passwords/load', requireAuth, (req, res) => {
-  const { master } = req.body;
-  if (!master) return res.status(400).json({ ok: false, error: "Missing master." });
-  try {
-    if (!fs.existsSync(VAULT_FILE)) return res.json({ ok: true, vault: [] });
-    const enc = JSON.parse(fs.readFileSync(VAULT_FILE, 'utf8'));
-    const plaintext = decryptVault(enc, master);
-    const parsed = JSON.parse(plaintext);
-    res.json({ ok: true, vault: parsed });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: "Unable to decrypt: " + err.toString() });
-  }
-});
-
-/* --------- Start server --------- */
+// === START SERVER ===
+const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server started at http://localhost:${PORT}`);
 });
