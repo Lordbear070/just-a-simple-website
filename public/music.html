@@ -17,9 +17,13 @@
     let allMusic = [];
 
     async function loadMusic() {
-      const res = await fetch("/api/music?sessionToken=" + sessionToken);
-      allMusic = await res.json();
-      renderMusic(allMusic);
+    const res = await fetch("/api/music", {
+        headers: {
+        "Authorization": "Bearer " + sessionToken
+        }
+    });
+    allMusic = await res.json();
+    renderMusic(allMusic);
     }
 
     function renderMusic(list) {

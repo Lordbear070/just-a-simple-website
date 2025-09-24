@@ -13,10 +13,17 @@
     const sessionToken = localStorage.getItem("sessionToken");
     if (!sessionToken) location.href = "index.html";
 
-    async function loadRamble() {
-      const res = await fetch("/api/ramble?sessionToken=" + sessionToken);
-      const data = await res.text();
-      document.getElementById("rambleBox").value = data;
+    async function saveRamble() {
+      const text = document.getElementById("rambleBox").value;
+      await fetch("/api/ramble", {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer " + sessionToken,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ text })
+      });
+      alert("Saved!");
     }
 
     async function saveRamble() {
