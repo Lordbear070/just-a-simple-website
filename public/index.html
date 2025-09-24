@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Simple Website - Login</title>
+  <style>
+    body { font-family: Arial; max-width:700px; margin:40px auto; }
+    .card { border:1px solid #ddd; padding:20px; border-radius:8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+    input { padding:8px; width:100%; margin:6px 0; box-sizing:border-box; }
+    button { padding:10px 14px; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Simple Website — Login / Register</h2>
+    <div id="status"></div>
+    <div id="registerBox">
+      <h3>Register a master password (first time)</h3>
+      <input id="regMaster" type="password" placeholder="Enter master password (min 6)"/>
+      <button id="btnRegister">Register</button>
+    </div>
+    <hr/>
+    <h3>Login</h3>
+    <input id="loginMaster" type="password" placeholder="Master password"/>
+    <button id="btnLogin">Login</button>
+    <p id="err" class="error"></p>
+  </div>
+
+  <script>
+    async function postJSON(url, body){
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      return resp.json().catch(()=>({ok:false}));
+    }
+
+    document.getElementById('btnRegister').onclick = async () => {
+      const master = document.getElementById('regMaster').value;
+      const r = await postJSON('/api/register', { master });
+      if (r.ok) { location.href = '/home.html'; } else { document.getElementById('status').innerText = r.error || "Error"; }
+    };
+
+    document.getElementById('btnLogin').onclick = async () => {
+      const master = document.getElementById('loginMaster').value;
+      const r = await postJSON('/api/login', { master });
+      if (r.ok) {
+        // store master in sessionStorage for client-side encryption ops (not persisted)
+        sessionStorage.setItem('master', master);
+        location.href = '/home.html';
+      } else {
+        document.getElementById('err').innerText = r.error || "Login failed";
+      }
+    };
+  </script>
+</body>
+</html>

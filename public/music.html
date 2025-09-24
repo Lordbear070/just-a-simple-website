@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Music</title>
+  <style>
+    body { font-family: Arial; max-width:900px; margin:20px auto; }
+    ul { list-style:none; padding:0; }
+    li { padding:6px 0; border-bottom:1px solid #eee; }
+    audio { width:100%; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h2>Music</h2>
+  <p>Files come from server's D:\\music folder.</p>
+  <div id="files"></div>
+
+  <script>
+    async function fetchList(){
+      const r = await fetch('/api/music/list');
+      const j = await r.json();
+      if (!j.ok) return document.getElementById('files').innerText = "Error: " + (j.error||'');
+      const files = j.files || [];
+      const container = document.getElementById('files');
+      container.innerHTML = '';
+      files.forEach(f => {
+        const li = document.createElement('div');
+        li.innerHTML = `<div><strong>${f.name}</strong> (${Math.round(f.size/1024)} KB)
+          <button data-path="${encodeURIComponent(f.name)}">Play</button>
+        </div>`;
+        const btn = li.querySelector('button');
+        btn.onclick = () => {
+          // create audio element
+          const url = `/api/music/stream?path=${encodeURIComponent(f.name)}`;
+          const existing = document.querySelector('audio[data-path="'+f.name+'"]');
+          if (existing) {
+            existing.scrollIntoView();
+            return;
+          }
+          const a = document.createElement('audio');
+          a.controls = true;
+          a.dataset.path = f.name;
+          a.src = url;
+          li.appendChild(a);
+          a.scrollIntoView();
+        };
+        container.appendChild(li);
+      });
+    }
+    fetchList();
+  </script>
+</body>
+</html>

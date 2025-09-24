@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Rambleling</title>
+  <style>
+    body { font-family: Arial; max-width:1000px; margin:20px auto; }
+    textarea { width:100%; height:60vh; font-family:monospace; font-size:14px; }
+    button { padding:8px 12px; margin:6px 0; }
+  </style>
+</head>
+<body>
+  <h2>Rambleling</h2>
+  <button id="saveBtn">Save</button>
+  <button id="reloadBtn">Reload</button>
+  <textarea id="ramble"></textarea>
+
+  <script>
+    async function apiGet(url){ const r = await fetch(url); return r.json(); }
+    async function apiPost(url, body){ const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); return r.json(); }
+
+    async function load() {
+      const r = await apiGet('/api/ramble/load');
+      if (r.ok) document.getElementById('ramble').value = r.content || '';
+      else alert('Error loading: ' + (r.error||''));
+    }
+    document.getElementById('saveBtn').onclick = async () => {
+      const content = document.getElementById('ramble').value;
+      const r = await apiPost('/api/ramble/save', { content });
+      if (!r.ok) alert('Save error: ' + (r.error||''));
+      else alert('Saved.');
+    };
+    document.getElementById('reloadBtn').onclick = load;
+    load();
+  </script>
+</body>
+</html>
