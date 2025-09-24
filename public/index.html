@@ -43,7 +43,7 @@
         body: JSON.stringify({ username, password })
       }).then(r => r.json());
       if (r.ok) {
-        localStorage.setItem("session", r.token);
+        localStorage.setItem("sessionToken", r.token);
         localStorage.setItem("username", username);
         window.location.href = "/home.html";
       } else {
