@@ -1,50 +1,51 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
   <title>Music</title>
 </head>
 <body>
-  <h2>Music Player</h2>
-  <input id="searchBox" placeholder="Search by filename..." oninput="render()">
-  <ul id="fileList"></ul>
-  <audio id="player" controls></audio>
+  <button onclick="location.href='home.html'">⬅ Back to Home</button>
+  <h1>Music</h1>
+  <input type="text" id="search" placeholder="Search music..." oninput="filterMusic()"><br><br>
+  <div id="musicList"></div>
+  <audio id="player" controls style="margin-top:20px; width:400px;"></audio>
 
   <script>
-    const token = localStorage.getItem("session");
-    if (!token) window.location.href = "/index.html";
-    let files = [];
+    const sessionToken = localStorage.getItem("sessionToken");
+    if (!sessionToken) location.href = "index.html";
 
-    async function load() {
-      const r = await fetch("/api/music", {
-        headers: { "Authorization": "Bearer " + token }
-      }).then(r => r.json());
-      if (r.ok) { files = r.files; render(); }
+    let allMusic = [];
+
+    async function loadMusic() {
+      const res = await fetch("/api/music?sessionToken=" + sessionToken);
+      allMusic = await res.json();
+      renderMusic(allMusic);
     }
 
-    function render() {
-      const filter = document.getElementById("searchBox").value.toLowerCase();
-      const list = document.getElementById("fileList");
-      list.innerHTML = "";
-      files
-        .filter(f => f.toLowerCase().includes(filter))
-        .forEach(f => {
-          const li = document.createElement("li");
-          const btn = document.createElement("button");
-          btn.innerText = pathName(f);
-          btn.onclick = () => {
-            document.getElementById("player").src = "/musicfile?path=" + encodeURIComponent(f);
-          };
-          li.appendChild(btn);
-          list.appendChild(li);
-        });
+    function renderMusic(list) {
+      const container = document.getElementById("musicList");
+      container.innerHTML = "";
+      list.forEach(file => {
+        const btn = document.createElement("button");
+        btn.textContent = file;
+        btn.onclick = () => playMusic(file);
+        container.appendChild(btn);
+        container.appendChild(document.createElement("br"));
+      });
     }
 
-    function pathName(fullPath) {
-      return fullPath.split("\\").pop().split("/").pop();
+    function filterMusic() {
+      const q = document.getElementById("search").value.toLowerCase();
+      renderMusic(allMusic.filter(f => f.toLowerCase().includes(q)));
     }
 
-    load();
+    function playMusic(file) {
+      const player = document.getElementById("player");
+      player.src = "/api/musicfile?sessionToken=" + sessionToken + "&file=" + encodeURIComponent(file);
+      player.play();
+    }
+
+    loadMusic();
   </script>
 </body>
 </html>
