@@ -52,14 +52,29 @@
       const list = document.getElementById("musicList");
       list.innerHTML = "";
       musicArray.forEach(file => {
+        // Split path into parts
+        const parts = file.split(/[\\/]/); // handles both / and \
+        const artist = parts.length > 1 ? parts[parts.length - 3] : "Unknown Artist";
+        const filename = parts[parts.length - 1];
+
+        // Remove extension
+        const songName = filename.replace(/\.[^/.]+$/, "");
+
+        // Optionally remove leading track numbers like "01 "
+        const cleanSong = songName.replace(/^\d+\s*/, "");
+
+            // Display as "Artist – Song"
+        const displayName = `${artist} – ${cleanSong}`;
+
         const li = document.createElement("li");
         const btn = document.createElement("button");
-        btn.textContent = file;
+        btn.textContent = displayName;
         btn.onclick = () => playMusic(file);
         li.appendChild(btn);
         list.appendChild(li);
       });
     }
+
 
     function searchMusic() {
       const term = document.getElementById("searchBox").value.toLowerCase();
@@ -70,6 +85,8 @@
         renderMusic(filtered);
       }
     }
+
+    let currentPlayingLi = null;
 
     async function playMusic(file) {
       try {
@@ -87,6 +104,12 @@
         const player = document.getElementById("player");
         player.src = url;
         player.play();
+
+        // Highlight current song
+        if (currentPlayingLi) currentPlayingLi.style.backgroundColor = "";
+        currentPlayingLi = [...document.querySelectorAll("#musicList li button")]
+          .find(b => b.onclick.toString().includes(file))?.parentElement;
+        if (currentPlayingLi) currentPlayingLi.style.backgroundColor = "#d0f0c0";
 
       } catch (err) {
         console.error(err);
